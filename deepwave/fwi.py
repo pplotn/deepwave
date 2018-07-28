@@ -77,28 +77,47 @@ def resample_model(model, dx_in, dx_out, nx_out=None):
   resampled_model = interp(z_out, y_out)
   return resampled_model
 
-def invert_freq(dataset, src_amp_init, src_start_time, model_init, cutoff_freq,
-                num_epochs, num_superbatches, num_batches, pml_width=10,
-                survey_pad=500, lr_model=1e5, lr_src_amp=0.0001):
+#TODO:
+# * pool src and data, and use to determine and apply model pool
+# * invert increasing time
+# * separate into train and validate datasets
+# * use validate dataset to determine config changes
+# * total variation regularization
+# * supershots
+
+def fwi(dataset, src_amp_init, src_start_time, model_init,
+        num_pool_data,
+        num_epochs, num_superbatches, num_batches, pml_width=10,
+        survey_pad=500, lr_model=1e5, lr_src_amp=0.0001,
+        invert_source=True, invert_model=True):
+
+  # Convert inputs to PyTorch Tensors
+  src_amp_init = torch.Tensor(src_amp_init)
+  model_init = torch.Tensor(model_init)
+
+  # Add extra dimension to model if needed
+  if 
   
   # Make copies of the initial source amplitude and model for updating
-  src_amp = src_amp_init.copy()
-  model = model_init.copy()
+  src_amp = src_amp_init.data.clone()
+  if invert_source:
+      src_amp.requires_grad_()
+  model = model_init.data.clone()
+  if invert_model:
+      model.requires_grad_()
   
-  # Resample source amplitude, and model for specified freq
-  dt, new_start_time = calc_data_decimation(cutoff_freq, dataset.dt,
+  # Pool source amplitude and model
+  dt, new_start_time = calc_data_decimation(num_pool_data, dataset.dt,
                                             src_start_time)
-  src_amp = resample_data(src_amp, dataset.dt, dt,
-                          src_start_time, new_start_time)
-  dx = calc_model_decimation(model, cutoff_freq, dataset.dx)
-  model = resample_model(model, dataset.dx, dx)
+
+  dx = calc_model_decimation(model, dt, dataset.dx)
   
-  # Convert to PyTorch Tensors and send to GPU (if available)
+  # Send to GPU (if available)
   if torch.cuda.is_available():
     device = torch.device('cuda') 
   else:
     device = torch.device('cpu')
-  model_t = torch.Tensor(model[np.newaxis]).to(device)
+  model = torch.Tensor(model[np.newaxis]).to(device)
   model_t.requires_grad_()
   src_amp_t = torch.Tensor(src_amp).to(device)
   src_amp_t.requires_grad_()
@@ -140,12 +159,5 @@ def invert_freq(dataset, src_amp_init, src_start_time, model_init, cutoff_freq,
         epoch_loss += loss.detach().item()
       optimizer.step()
     print('Epoch:', epoch, 'Loss: ', epoch_loss)
-    
-  # Resample outputs and convert to NumPy
-  src_amp = resample_data(src_amp_t.detach().cpu().numpy(), dt, dataset.dt,
-                          new_start_time, src_start_time,
-                          num_steps_out=len(src_amp_init))
-  model = resample_model(model_t[0].detach().cpu().numpy(), dx, dataset.dx,
-                         nx_out=model_init.shape)
       
-  return src_amp, model
+  return src_amp.detach(), model.detach()
