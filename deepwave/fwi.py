@@ -59,6 +59,14 @@ def apply_max_time(batch_data_true, src_amp,
     return batch_data_true, src_amp
 
 
+def calc_survey_pad(max_time, dt, model, max_horiz_survey_pad):
+    ndims = model.dim() - 1
+    pad_dist = model.max().item() * max_time * dt / 2
+    survey_pad = torch.ones(2 * ndims) * pad_dist
+    if ndims > 1:
+        survey_pad[2:] = survey_pad[2:].clamp(None, max_horiz_survey_pad)
+    return survey_pad
+
 # TODO:
 # * invert increasing time
 # * separate into train and validate datasets
@@ -70,7 +78,7 @@ def apply_max_time(batch_data_true, src_amp,
 def fwi(dataset, src_amp_init, src_start_time, model_init,
         num_pool_data, num_max_time,
         num_epochs, num_superbatches, num_batches, pml_width=10,
-        survey_pad=500.0, lr_model=1e5, lr_src_amp=0.0001,
+        max_horiz_survey_pad=500.0, lr_model=1e5, lr_src_amp=0.0001,
         invert_source=True, invert_model=True):
 
     # Check if GPU is available
@@ -110,6 +118,8 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
     # Inversion loop
     for max_time_idx in range(num_max_time):
         max_time = max_time_idx * int(dataset.num_steps / num_max_time)
+        survey_pad = calc_survey_pad(max_time, dataset.dt,
+                                     model, max_horiz_survey_pad)
         for epoch in range(num_epochs):
             epoch_loss = 0.0
             for superbatch_idx in range(num_superbatches):
