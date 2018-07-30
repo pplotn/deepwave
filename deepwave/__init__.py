@@ -3,3 +3,4 @@
 import deepwave.scalar
 import deepwave.utils
 import deepwave.wavelets
+import deepwave.fwi

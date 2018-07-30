@@ -38,7 +38,7 @@ class Propagator(torch.nn.Module):
     def __init__(self, model, dx, pml_width=None, survey_pad=None):
         super(Propagator, self).__init__()
         self.model = model
-        self.dx = dx.cpu()
+        self.dx = dx.float().cpu()
         self.pml_width = pml_width
         self.survey_pad = survey_pad
 
@@ -93,7 +93,6 @@ class PropagatorFunction(torch.autograd.Function):
         Returns:
             receiver amplitudes
         """
-
         pad_width = 2
         if pml_width is None:
             pml_width = 10
@@ -427,7 +426,7 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
                          .format(len(survey_pad), 2 * (ndims - 1)))
     extents = [slice(None)]  # property dim
     for dim in range(ndims - 1):  # ndims - 1 as no property dim
-        left_pad = survey_pad[dim * 2]
+        left_pad = survey_pad[dim * 2].item()
         if left_pad is None:
             left_extent = None
         else:
@@ -440,7 +439,7 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
             if left_extent == 0:
                 left_extent = None
 
-        right_pad = survey_pad[dim * 2 + 1]
+        right_pad = survey_pad[dim * 2 + 1].item()
         if right_pad is None:
             right_extent = None
         else:
