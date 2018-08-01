@@ -2,6 +2,14 @@ import math
 import torch
 import deepwave
 
+# dataset:
+#   - num_shots
+#   - get_shots(start, end)
+#   - src_locs
+#   - rec_locs
+#   - dt
+#   - dx
+
 
 def extract_batch(dataset,
                   num_superbatches, num_batches, superbatch_idx,
@@ -27,7 +35,9 @@ def extract_batch(dataset,
 
 
 def pool_data(data, num_pool, dt, start_time=0):
-    padding = int(start_time / dt) % num_pool  # t=0 starts a new block
+    #padding = int(start_time / dt) % int(num_pool / 2)  # t=0 starts a new block
+    #padding = int(num_pool / 2)
+    padding = 0
     pool = torch.nn.AvgPool1d(num_pool, padding=padding)
     data_pool = pool(data)
     return data_pool, dt * num_pool
@@ -50,7 +60,7 @@ def pool_model(model, dt, dx, min_cells_per_wavelength=4):
     num_pool = torch.ceil(max_dx / torch.as_tensor(dx)).long()
     pool = poolfunc(num_pool.tolist())
     model_pool = pool(model.reshape(1, *model.shape))[0]
-    return model_pool, dx * num_pool
+    return model_pool, dx * num_pool.float()
 
 
 def apply_max_time(batch_data_true, src_amp,
@@ -79,10 +89,12 @@ def calc_survey_pad(max_time, dt, model, max_horiz_survey_pad):
 
 
 def fwi(dataset, src_amp_init, src_start_time, model_init,
-        num_pool_data, num_max_time,
+        num_pool_data, max_time,
         num_epochs, num_superbatches, num_batches, pml_width=10,
-        max_horiz_survey_pad=500.0, lr_model=1e5, lr_src_amp=0.0001,
-        invert_source=True, invert_model=True):
+        max_horiz_survey_pad=500.0, lr_src_amp=0.0001, lr_model=1e5,
+        weight_decay_src_amp=0.0, weight_decay_model=0.0,
+        tv_model_amp=0.0,
+        invert_source=True, invert_model=True, free_surface=False):
 
     # Check if GPU is available
     if torch.cuda.is_available():
@@ -103,7 +115,8 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
     src_amp = src_amp_init.data.clone().to(device)
     if invert_source:
         src_amp.requires_grad_()
-    model = model_init.data.clone().to(device)
+    #model = model_init.data.clone().to(device)
+    model = torch.zeros_like(model_init.data).to(device)
     if invert_model:
         model.requires_grad_()
 
@@ -111,46 +124,60 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
     criterion = torch.nn.MSELoss()
     params = []
     if invert_source:
-        params.append({'params': [src_amp], 'lr': lr_src_amp})
+        params.append({'params': [src_amp], 'lr': lr_src_amp,
+                       'weight_decay': weight_decay_src_amp})
     if invert_model:
-        params.append({'params': [model], 'lr': lr_model})
+        params.append({'params': [model], 'lr': lr_model,
+                       'weight_decay': weight_decay_model})
     optimizer = torch.optim.Adam(params)
     tail = deepwave.utils.Tail()
-    pml_width = torch.Tensor([0, 1, 1, 1, 0, 0]) * pml_width  # free surface
+    if free_surface:
+        pml_width = torch.Tensor([0, 1, 1, 1, 0, 0]) * pml_width
+    else:
+        pml_width = torch.Tensor([1, 1, 1, 1, 0, 0]) * pml_width
 
     # Inversion loop
-    for max_time_idx in range(1):#num_max_time):
-        max_time = (max_time_idx + 1) * int(dataset.num_steps / num_max_time)
-        survey_pad = calc_survey_pad(max_time, dataset.dt,
-                                     model, max_horiz_survey_pad)
-        for epoch in range(num_epochs):
-            epoch_loss = 0.0
-            for superbatch_idx in range(num_superbatches):
-                optimizer.zero_grad()
-                for batch_idx in range(num_batches):
-                    # Extract batch of data
-                    batch_data_true, batch_src_locs, batch_rec_locs = \
-                        extract_batch(dataset,
-                                      num_superbatches, num_batches,
-                                      superbatch_idx, batch_idx)
-                    epoch_loss += run_batch(dataset, src_amp, src_start_time,
-                                            model, num_pool_data,
-                                            batch_data_true,
-                                            batch_src_locs, batch_rec_locs,
-                                            max_time, device, pml_width,
-                                            survey_pad, criterion, tail)
-                optimizer.step()
-            print('Epoch:', epoch, 'Loss: ', epoch_loss)
+    #for max_time_idx in range(num_max_time):
+    #    max_time = (max_time_idx + 1) * int(dataset.num_steps / num_max_time)
+    survey_pad = calc_survey_pad(max_time, dataset.dt, # TODO: move to inner loop because of model?
+                                 model_init, max_horiz_survey_pad)
+    for epoch in range(num_epochs):
+        epoch_loss = 0.0
+        for superbatch_idx in range(num_superbatches):
+            optimizer.zero_grad()
+            for batch_idx in range(num_batches):
+                # Extract batch of data
+                batch_data_true, batch_src_locs, batch_rec_locs = \
+                    extract_batch(dataset,
+                                  num_superbatches, num_batches,
+                                  superbatch_idx, batch_idx)
+                #epoch_loss += run_batch(dataset, src_amp, src_start_time,
+                #                        model, model_init, num_pool_data,
+                #                        batch_data_true,
+                #                        batch_src_locs, batch_rec_locs,
+                #                        max_time, device, pml_width,
+                #                        survey_pad, criterion, tail,
+                #                        tv_model_amp)
+                return run_batch(dataset, src_amp, src_start_time,
+                                        model, model_init, num_pool_data,
+                                        batch_data_true,
+                                        batch_src_locs, batch_rec_locs,
+                                        max_time, device, pml_width,
+                                        survey_pad, criterion, tail,
+                                        tv_model_amp)
+            optimizer.step()
+        print('Epoch:', epoch, 'Loss: ', epoch_loss)
 
-    return src_amp.detach(), model.detach()
+    return src_amp.detach(), (model + model_init).detach()
 
 
 def run_batch(dataset, src_amp, src_start_time,
-              model, num_pool_data,
+              model, model_init, num_pool_data,
               batch_data_true,
               batch_src_locs, batch_rec_locs,
               max_time, device, pml_width,
-              survey_pad, criterion, tail):
+              survey_pad, criterion, tail,
+              tv_model_amp):
 
     # Limit to maximum time
     batch_data_true, src_amp = apply_max_time(batch_data_true, src_amp,
@@ -163,7 +190,7 @@ def run_batch(dataset, src_amp, src_start_time,
     src_amp_pool, _ = pool_data(src_amp.reshape(1, 1, -1),
                                 num_pool_data, dataset.dt,
                                 src_start_time)
-    model_pool, dx = pool_model(model, dt, dataset.dx)
+    model_pool, dx = pool_model(model+model_init, dt, dataset.dx)
 
     # Make a copy of the source amplitude for each shot
     batch_src_amps = \
@@ -182,10 +209,23 @@ def run_batch(dataset, src_amp, src_start_time,
     prop = deepwave.scalar.Propagator(model_pool, dx,
                                       pml_width=pml_width,
                                       survey_pad=survey_pad)
-
+    
     # Propagate and calculate loss
     batch_data_pred = prop(
         batch_src_amps, batch_src_locs, batch_rec_locs, dt)
-    loss = criterion(*tail(batch_data_pred, batch_data_true))
+    return batch_data_pred, batch_data_true
+    loss = criterion(*tail(batch_data_pred, batch_data_true)) + tv_model_amp * tvloss(model_pool, dx)
     loss.backward()
     return loss.detach().item()
+
+def tvloss(model, dx):
+    ndims = model.dim()
+    tv1 = tv2 = tv3 = torch.zeros(1)
+    if ndims >= 2:
+        tv1 = torch.abs(model[0, 1:] - model[0, :-1]) / dx[0]
+    if ndims >= 3:
+        tv2 = torch.abs((model[0, :, 1:] - model[0, :, :-1])) / dx[1]
+    if ndims == 4:
+        tv3 = torch.abs((model[0, :, :, 1:] - model[0, :, :, :-1])) / dx[2]
+    error = torch.norm(tv1, 1) + torch.norm(tv2, 1) + torch.norm(tv3, 1)
+    return error

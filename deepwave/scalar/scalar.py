@@ -426,7 +426,9 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
                          .format(len(survey_pad), 2 * (ndims - 1)))
     extents = [slice(None)]  # property dim
     for dim in range(ndims - 1):  # ndims - 1 as no property dim
-        left_pad = survey_pad[dim * 2].item()
+        left_pad = survey_pad[dim * 2]
+        if isinstance(left_pad, torch.Tensor):
+            left_pad = left_pad.item()
         if left_pad is None:
             left_extent = None
         else:
@@ -439,7 +441,9 @@ def _get_survey_extents(model_shape, dx, survey_pad, source_locations,
             if left_extent == 0:
                 left_extent = None
 
-        right_pad = survey_pad[dim * 2 + 1].item()
+        right_pad = survey_pad[dim * 2 + 1]
+        if isinstance(right_pad, torch.Tensor):
+            right_pad = right_pad.item()
         if right_pad is None:
             right_extent = None
         else:
