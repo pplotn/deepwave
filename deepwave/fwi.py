@@ -105,10 +105,12 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
     # Convert inputs to PyTorch Tensors if they are not already
     src_amp_init = torch.as_tensor(src_amp_init).float()
     model_init = torch.as_tensor(model_init).float()
+    print('A', model_init.shape)
 
     # Add extra dimension to model if needed
     if model_init.shape[0] != 1:
         model_init = model_init.reshape(1, *model_init.shape)
+    print('B', model_init.shape)
 
     # Make copies of the initial source amplitude and model for updating
     # and send to GPU (if available)
@@ -119,6 +121,7 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
     model = torch.zeros_like(model_init.data).to(device)
     if invert_model:
         model.requires_grad_()
+    print('C', model.shape)
 
     # Set-up inversion
     criterion = torch.nn.MSELoss()
@@ -130,11 +133,11 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
         params.append({'params': [model], 'lr': lr_model,
                        'weight_decay': weight_decay_model})
     optimizer = torch.optim.Adam(params)
-    tail = deepwave.utils.Tail()
+    pml_width = (torch.ones(6) * pml_width).long()
+    pml_width[2 * (model_init.dim() - 1):] = 0
     if free_surface:
-        pml_width = torch.Tensor([0, 1, 1, 1, 0, 0]) * pml_width
-    else:
-        pml_width = torch.Tensor([1, 1, 1, 1, 0, 0]) * pml_width
+        pml_width[0] = 0
+    tail = deepwave.utils.Tail()
 
     # Inversion loop
     #for max_time_idx in range(num_max_time):
@@ -151,14 +154,7 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
                     extract_batch(dataset,
                                   num_superbatches, num_batches,
                                   superbatch_idx, batch_idx)
-                #epoch_loss += run_batch(dataset, src_amp, src_start_time,
-                #                        model, model_init, num_pool_data,
-                #                        batch_data_true,
-                #                        batch_src_locs, batch_rec_locs,
-                #                        max_time, device, pml_width,
-                #                        survey_pad, criterion, tail,
-                #                        tv_model_amp)
-                return run_batch(dataset, src_amp, src_start_time,
+                epoch_loss += run_batch(dataset, src_amp, src_start_time,
                                         model, model_init, num_pool_data,
                                         batch_data_true,
                                         batch_src_locs, batch_rec_locs,
@@ -167,6 +163,7 @@ def fwi(dataset, src_amp_init, src_start_time, model_init,
                                         tv_model_amp)
             optimizer.step()
         print('Epoch:', epoch, 'Loss: ', epoch_loss)
+    print('D', model.shape, model_init.shape)
 
     return src_amp.detach(), (model + model_init).detach()
 
@@ -213,7 +210,6 @@ def run_batch(dataset, src_amp, src_start_time,
     # Propagate and calculate loss
     batch_data_pred = prop(
         batch_src_amps, batch_src_locs, batch_rec_locs, dt)
-    return batch_data_pred, batch_data_true
     loss = criterion(*tail(batch_data_pred, batch_data_true)) + tv_model_amp * tvloss(model_pool, dx)
     loss.backward()
     return loss.detach().item()
