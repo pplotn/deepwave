@@ -154,73 +154,126 @@ void propagate(
 
         /* Spatial finite differences */
         TYPE lap = laplacian(wfc);
-        TYPE wfc_z = z_deriv(wfc);
-        TYPE phizc_z = z_deriv(phizc);
 
 #if DIM == 1
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * sigmaz[z] / 2) *
-                (model[i] * (lap + phizc_z)
-                 + dt * sigmaz[z] * wfp[si] / 2
-                 + (2 * wfc[si] - wfp[si]));
+        if (
+                        (z >= pml_width[0] + 2 * ZPAD) &&
+                        (z < shape[0] - pml_width[1] - 2 * ZPAD)
+           )
+        {
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * sigmaz[z] * (wfc_z + phizc[si]);
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
+
+		TYPE wfc_z = z_deriv(wfc);
+		TYPE phizc_z = z_deriv(phizc);
+
+		/* Update wavefield */
+		wfn[si] = 1 / (1 + dt * sigmaz[z] / 2) *
+			(model[i] * (lap + phizc_z)
+			 + dt * sigmaz[z] * wfp[si] / 2
+			 + (2 * wfc[si] - wfp[si]));
+
+		/* Update phi */
+		phizn[si] = phizc[si] - dt * sigmaz[z] * (wfc_z + phizc[si]);
+	}
 
 #elif DIM == 2
 
-        TYPE wfc_y = y_deriv(wfc);
-        TYPE phiyc_y = y_deriv(phiyc);
+        if (
+                        (z >= pml_width[0] + 2 * ZPAD) &&
+                        (z < shape[0] - pml_width[1] - 2 * ZPAD) &&
+                        (y >= pml_width[2] + 2 * YPAD) &&
+                        (y < shape[1] - pml_width[3] - 2 * YPAD)
+           )
+        {
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y]) / 2) *
-                (model[i] * (lap + phizc_z + phiyc_y) +
-                 dt * (sigmaz[z] + sigmay[y]) * wfp[si] / 2 +
-                 (2 * wfc[si] - wfp[si]) -
-                 dt * dt * sigmaz[z] * sigmay[y] * wfc[si]);
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * (sigmaz[z] * phizc[si] +
-                        (sigmaz[z] - sigmay[y]) * wfc_z);
-        phiyn[si] = phiyc[si] - dt * (sigmay[y] * phiyc[si] +
-                        (sigmay[y] - sigmaz[z]) * wfc_y);
+                TYPE wfc_z = z_deriv(wfc);
+                TYPE phizc_z = z_deriv(phizc);
+                TYPE wfc_y = y_deriv(wfc);
+                TYPE phiyc_y = y_deriv(phiyc);
+
+		/* Update wavefield */
+		wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y]) / 2) *
+			(model[i] * (lap + phizc_z + phiyc_y) +
+			 dt * (sigmaz[z] + sigmay[y]) * wfp[si] / 2 +
+			 (2 * wfc[si] - wfp[si]) -
+			 dt * dt * sigmaz[z] * sigmay[y] * wfc[si]);
+
+		/* Update phi */
+		phizn[si] = phizc[si] - dt * (sigmaz[z] * phizc[si] +
+				(sigmaz[z] - sigmay[y]) * wfc_z);
+		phiyn[si] = phiyc[si] - dt * (sigmay[y] * phiyc[si] +
+				(sigmay[y] - sigmaz[z]) * wfc_y);
+	}
 
 #elif DIM == 3
 
-        TYPE wfc_y = y_deriv(wfc);
-        TYPE wfc_x = x_deriv(wfc);
-        TYPE phiyc_y = y_deriv(phiyc);
-        TYPE phixc_x = x_deriv(phixc);
-        TYPE psic_z = z_deriv(psic);
-        TYPE psic_y = y_deriv(psic);
-        TYPE psic_x = x_deriv(psic);
+        if (
+                        (z >= pml_width[0] + 2 * ZPAD) &&
+                        (z < shape[0] - pml_width[1] - 2 * ZPAD) &&
+                        (y >= pml_width[2] + 2 * YPAD) &&
+                        (y < shape[1] - pml_width[3] - 2 * YPAD) &&
+                        (x >= pml_width[4] + 2 * XPAD) &&
+                        (x < shape[2] - pml_width[5] - 2 * XPAD)
+           )
+        {
 
-        /* Update wavefield */
-        wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y] + sigmax[x]) / 2) *
-                (model[i] * lap + dt * dt * (phizc_z + phiyc_y + phixc_x -
-                                             sigmaz[z] * sigmay[y] * sigmax[x] *
-                                             psic[si]) +
-                 dt * (sigmaz[z] + sigmay[y] + sigmax[x]) * wfp[si] / 2 +
-                 (2 * wfc[si] - wfp[si]) -
-                 dt * dt * wfc[si] *
-                 (sigmax[x] * sigmay[y] +
-                  sigmay[y] * sigmaz[z] +
-                  sigmax[x] * sigmaz[z]));
+                /* Update wavefield */
+                wfn[si] = model[i] * lap + 2 * wfc[si] - wfp[si];
+        }
+        else
+        {
+                /* Inside PML region */
 
-        /* Update phi */
-        phizn[si] = phizc[si] - dt * sigmaz[z] * phizc[si] +
-                model[i] / dt * (sigmay[y] + sigmax[x]) * wfc_z +
-                dt * sigmax[x] * sigmay[y] * psic_z;
-        phiyn[si] = phiyc[si] - dt * sigmay[y] * phiyc[si] +
-                model[i] / dt * (sigmaz[z] + sigmax[x]) * wfc_y +
-                dt * sigmax[x] * sigmaz[z] * psic_y;
-        phixn[si] = phixc[si] - dt * sigmax[x] * phixc[si] +
-                model[i] / dt * (sigmaz[z] + sigmay[y]) * wfc_x +
-                dt * sigmaz[z] * sigmay[y] * psic_x;
+                TYPE wfc_z = z_deriv(wfc);
+                TYPE phizc_z = z_deriv(phizc);
+                TYPE wfc_y = y_deriv(wfc);
+                TYPE wfc_x = x_deriv(wfc);
+                TYPE phiyc_y = y_deriv(phiyc);
+                TYPE phixc_x = x_deriv(phixc);
+                TYPE psic_z = z_deriv(psic);
+                TYPE psic_y = y_deriv(psic);
+                TYPE psic_x = x_deriv(psic);
 
-        /* Update psi */
-        psin[si] = psic[si] + dt * wfc[si];
+		/* Update wavefield */
+		wfn[si] = 1 / (1 + dt * (sigmaz[z] + sigmay[y] + sigmax[x]) / 2) *
+			(model[i] * lap + dt * dt * (phizc_z + phiyc_y + phixc_x -
+						     sigmaz[z] * sigmay[y] * sigmax[x] *
+						     psic[si]) +
+			 dt * (sigmaz[z] + sigmay[y] + sigmax[x]) * wfp[si] / 2 +
+			 (2 * wfc[si] - wfp[si]) -
+			 dt * dt * wfc[si] *
+			 (sigmax[x] * sigmay[y] +
+			  sigmay[y] * sigmaz[z] +
+			  sigmax[x] * sigmaz[z]));
+
+		/* Update phi */
+		phizn[si] = phizc[si] - dt * sigmaz[z] * phizc[si] +
+			model[i] / dt * (sigmay[y] + sigmax[x]) * wfc_z +
+			dt * sigmax[x] * sigmay[y] * psic_z;
+		phiyn[si] = phiyc[si] - dt * sigmay[y] * phiyc[si] +
+			model[i] / dt * (sigmaz[z] + sigmax[x]) * wfc_y +
+			dt * sigmax[x] * sigmaz[z] * psic_y;
+		phixn[si] = phixc[si] - dt * sigmax[x] * phixc[si] +
+			model[i] / dt * (sigmaz[z] + sigmay[y]) * wfc_x +
+			dt * sigmaz[z] * sigmay[y] * psic_x;
+
+		/* Update psi */
+		psin[si] = psic[si] + dt * wfc[si];
+	}
 
 #endif /* DIM */
 
