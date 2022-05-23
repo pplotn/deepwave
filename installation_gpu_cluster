@@ -1,1 +1,14 @@
+# here i publish the algorithm to install it on kaust ibex gpu cluster
+# as i remember it the next day after doing installation manually
 
+1) make conda installation in your home directory on ibex
+2) activate conda by sourcing basrc file
+
+conda create -n myenv python=3.9
+module load cuda/11.2.2
+conda install gxx_linux-64
+module load gcc/6.4.0
+pip3 install torch --extra-index-url https://download.pytorch.org/whl/cu113
+pip install deepwave
+
+it should work smoothly
